@@ -1,10 +1,11 @@
 from rest_framework.decorators import api_view
 from pydantic import ValidationError
 from ..utils.api_response import APIResponse
-from ..validators.user_validators import CreateUserValidator
+from ..validators.user_validators import CreateUserValidator, LoginValidator
 from users.models import User
 import bcrypt
 import cloudinary.uploader
+from auth_sessions.utils import initializeToken
 
 
 @api_view(["POST"])
@@ -43,9 +44,39 @@ def create_user(request):
             name=validate_data.name,
             email=validate_data.email,
             profile_picture_url=profile_picture_secure_url,
-            password=hashed_password,
+            password=hashed_password.decode(),
         )
 
         return APIResponse(True, 201, "User has been created.")
+    except Exception:
+        return APIResponse(False, 500, "Internal Server Error.")
+
+
+@api_view(["POST"])
+def login(request):
+    try:
+        # validate the request body
+        validate_data = LoginValidator(**request.data)
+    except ValidationError as e:
+        return APIResponse(False, 400, "Failed in type validation.", error=e.errors())
+
+    try:
+        # get hold of the user
+        found_user = User.objects.get(email=validate_data.email)
+    except User.DoesNotExist:
+        return APIResponse(False, 409, "Invalid Credentials.")
+
+    # check if the password is correct
+    if (
+        bcrypt.checkpw(
+            validate_data.password.encode("utf-8"), found_user.password.encode("utf-8")
+        )
+    ) == False:
+        return APIResponse(False, 409, "Invalid Credentials.")
+
+    # initialize the token and send reponse to the client
+    try:
+        token = initializeToken(found_user)
+        return APIResponse(True, 200, "User has been logged in.", cookie=token)
     except Exception:
         return APIResponse(False, 500, "Internal Server Error.")
