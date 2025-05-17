@@ -5,7 +5,10 @@ from ..validators.user_validators import CreateUserValidator, LoginValidator
 from users.models import User
 import bcrypt
 import cloudinary.uploader
-from auth_sessions.utils import initializeToken
+from auth_sessions.utils import initializeToken, verifyToken
+from auth_sessions.models import Session
+from rest_framework.response import Response
+from django.utils import timezone
 
 
 @api_view(["POST"])
@@ -79,4 +82,47 @@ def login(request):
         token = initializeToken(found_user)
         return APIResponse(True, 200, "User has been logged in.", cookie=token)
     except Exception:
+        return APIResponse(False, 500, "Internal Server Error.")
+
+
+@api_view(["POST"])
+def logout(request):
+    # pass the request object to the verify token function which will verify the cookie and return the decoded id incase of successful verification
+    decodeToken = verifyToken(request)
+
+    # incase the verification was unsuccesful will return False
+    if decodeToken == False:
+        return APIResponse(False, 401, "Unauthorized")
+
+    try:
+        # geting hold of the user
+        found_user = User.objects.get(id=decodeToken)
+    except User.DoesNotExist:
+        return APIResponse(False, 401, "Unauthorized")
+
+    try:
+        # delete the session in database
+        Session.objects.filter(user=found_user).delete()
+
+        # return response to the client
+        response = Response(
+            {
+                "success": True,
+                "statusCode": 200,
+                "message": "User has been logged out.",
+                "data": None,
+                "error": None,
+                "meta": {
+                    "timestamp": timezone.now().isoformat(),
+                },
+            },
+            status=200,
+        )
+
+        # delete the cookie named token by calling a method on the reponse object
+        response.delete_cookie("token")
+
+        return response
+    except Exception as e:
+        print(e)
         return APIResponse(False, 500, "Internal Server Error.")
