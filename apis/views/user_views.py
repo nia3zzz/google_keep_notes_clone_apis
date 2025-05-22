@@ -123,6 +123,5 @@ def logout(request):
         response.delete_cookie("token")
 
         return response
-    except Exception as e:
-        print(e)
+    except Exception:
         return APIResponse(False, 500, "Internal Server Error.")

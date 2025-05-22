@@ -17,7 +17,7 @@ class CreateUserValidator(BaseModel):
 
         # file size check of max 5mb
         if file.size > 5 * 1024 * 1024:
-            raise ValueError("Image too large (max 5MB).")
+            raise ValueError("Image too large, max 5MB.")
 
         return file
 
