@@ -33,6 +33,7 @@ ACCEPTED_CONTENT_TYPES = [
     "audio/x-ms-wma",
 ]
 
+
 # create note validator for the validation of the notes with coontent types, collaborators
 class CreateNoteValidator(BaseModel):
     title: str = Field(max_length=300)
@@ -43,6 +44,37 @@ class CreateNoteValidator(BaseModel):
     @field_validator("files")
     @classmethod
     def validate_files(cls, files):
+        if files is None:
+            return None
+
+        if not isinstance(files, Iterable):
+            raise ValueError("Files must be iterable.")
+
+        for file in files:
+            # file type validation
+            if file.content_type not in ACCEPTED_CONTENT_TYPES:
+                raise ValueError("Not a valid file type.")
+
+            # file size check of max 25mb
+            if file.size > 25 * 1024 * 1024:
+                raise ValueError("Image too large, max 25MB.")
+
+        return files
+
+
+class UpdateNoteValidator(BaseModel):
+    note_id: UUID
+    title: str = Field(max_length=300)
+    note: str
+    files_urls: list[str]
+    files: Any
+
+    @field_validator("files")
+    @classmethod
+    def validate_files(cls, files):
+        if files is None:
+            return None
+
         if not isinstance(files, Iterable):
             raise ValueError("Files must be iterable.")
 
