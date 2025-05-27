@@ -1,7 +1,11 @@
 from rest_framework.decorators import api_view
 from ..utils.api_response import APIResponse
 from pydantic import ValidationError
-from ..validators.note_validators import CreateNoteValidator, UpdateNoteValidator
+from ..validators.note_validators import (
+    CreateNoteValidator,
+    UpdateNoteValidator,
+    DeleteNoteValidator,
+)
 from auth_sessions.utils import verifyToken
 from users.models import User
 import cloudinary.uploader
@@ -81,8 +85,8 @@ def create_note(request):
         return APIResponse(False, 500, "Internal Server Error.")
 
 
-# creating a view to let the user or contributer update the note
-@api_view(["PUT"])
+# creating a view to let the user or contributer update the note and also have the user delete their note based on their provided note id and http methods provided
+@api_view(["PUT", "DELETE"])
 def update_note(request, note_id):
     # pass the request object to the verify token function which will verify the cookie and return the decoded id incase of successful verification
     decodeToken = verifyToken(request)
@@ -97,70 +101,103 @@ def update_note(request, note_id):
     except User.DoesNotExist:
         return APIResponse(False, 401, "Unauthorized")
 
-    data = {
-        "note_id": note_id,
-        "title": request.data.get("title"),
-        "note": request.data.get("note"),
-        "files_urls": request.data.getlist("files_urls"),
-        "files": request.FILES.getlist("files"),
-    }
+    if request.method == "PUT":
+        data = {
+            "note_id": note_id,
+            "title": request.data.get("title"),
+            "note": request.data.get("note"),
+            "files_urls": request.data.getlist("files_urls"),
+            "files": request.FILES.getlist("files"),
+        }
 
-    try:
-        # after successful authentication it's time to validate the data recieved from this request that includes teh request body and the parameter of note id
-        validate_data = UpdateNoteValidator(**data)
-    except ValidationError as e:
-        return APIResponse(False, 400, "Failed in type validation.", error=e.errors())
+        try:
+            # after successful authentication it's time to validate the data recieved from this request that includes teh request body and the parameter of note id
+            validate_put_method_data = UpdateNoteValidator(**data)
+        except ValidationError as e:
+            return APIResponse(
+                False, 400, "Failed in type validation.", error=e.errors()
+            )
 
-    try:
-        # check if the note exists with the note id provided as parameter in request url
-        found_note = Notes.objects.get(id=validate_data.note_id)
-    except Notes.DoesNotExist:
-        return APIResponse(False, 404, "Note not found with this id.")
+        try:
+            # check if the note exists with the note id provided as parameter in request url
+            found_note = Notes.objects.get(id=validate_put_method_data.note_id)
+        except Notes.DoesNotExist:
+            return APIResponse(False, 404, "Note not found with this id.")
 
-    # check if the user trying to update the note is allowed of their action
-    if (
-        found_user.id != found_note.user.id
-        and found_user.id not in found_note.collaborators
-    ):
-        return APIResponse(False, 401, "You are not authorized to update this note.")
+        # check if the user trying to update the note is allowed of their action
+        if (
+            found_user.id != found_note.user.id
+            and found_user.id not in found_note.collaborators
+        ):
+            return APIResponse(
+                False, 401, "You are not authorized to update this note."
+            )
 
-    # check if the fields are updated and not the same as it was
-    if (
-        validate_data.title == found_note.title
-        and validate_data.note == found_note.note
-        and validate_data.files_urls == found_note.files
-        and validate_data.files == None
-    ):
-        return APIResponse(False, 409, "No changes found to update.")
+        # check if the fields are updated and not the same as it was
+        if (
+            validate_put_method_data.title == found_note.title
+            and validate_put_method_data.note == found_note.note
+            and validate_put_method_data.files_urls == found_note.files
+            and validate_put_method_data.files == None
+        ):
+            return APIResponse(False, 409, "No changes found to update.")
 
-    try:
+        try:
 
-        # upload the file and hold the secure url if an file has been provided
-        files_cloudinary_urls = []
-        if len(validate_data.files) > 0:
-            for file in validate_data.files:
-                file_secure_url = cloudinary.uploader.upload(file)["secure_url"]
+            # upload the file and hold the secure url if an file has been provided
+            files_cloudinary_urls = []
+            if len(validate_put_method_data.files) > 0:
+                for file in validate_put_method_data.files:
+                    file_secure_url = cloudinary.uploader.upload(file)["secure_url"]
 
-                files_cloudinary_urls.append(file_secure_url)
+                    files_cloudinary_urls.append(file_secure_url)
 
-        if len(files_cloudinary_urls) > 0:
-            # update the note now
-            found_note.title = validate_data.title
-            found_note.note = validate_data.note
-            files = validate_data.files_urls or []
-            files.extend(files_cloudinary_urls)
-            found_note.files = files
+            if len(files_cloudinary_urls) > 0:
+                # update the note now
+                found_note.title = validate_put_method_data.title
+                found_note.note = validate_put_method_data.note
+                files = validate_put_method_data.files_urls or []
+                files.extend(files_cloudinary_urls)
+                found_note.files = files
+                found_note.save()
+
+                return APIResponse(True, 200, "Note has been updated.")
+
+            # if no new files are given
+            found_note.title = validate_put_method_data.title
+            found_note.note = validate_put_method_data.note
+            found_note.files = validate_put_method_data.files_urls
             found_note.save()
 
             return APIResponse(True, 200, "Note has been updated.")
 
-        # if no new files are given
-        found_note.title = validate_data.title
-        found_note.note = validate_data.note
-        found_note.files = validate_data.files_urls
-        found_note.save()
+        except Exception:
+            return APIResponse(False, 500, "Internal server error.")
 
-        return APIResponse(True, 200, "Note has been updated.")
+    elif request.method == "DELETE":
+        try:
+            # validate the request parameter of note id
+            validate_delete_method_data = DeleteNoteValidator(note_id=note_id)
+        except ValidationError as e:
+            return APIResponse(
+                False, 400, "Failed in type validation.", error=e.error()
+            )
 
-    except Exception:
-        return APIResponse(False, 500, "Internal server error.")
+        try:
+            # check if a note exists with the provided note id request url parameter
+            found_note = Notes.objects.get(id=validate_delete_method_data.note_id)
+        except Notes.DoesNotExist:
+            return APIResponse(False, 404, "Note not found with this id.")
+
+        # check if the user making the request is the creator of the note
+        if found_user.id != found_note.user.id:
+            return APIResponse(False, 401, "Unauthorized")
+
+        try:
+            # delete the note and return a successful response
+            found_note.delete()
+            found_note.save()
+
+            return APIResponse(True, 200, "Note has been deleted.")
+        except Exception:
+            return APIResponse(False, 500, "Internal server error.")

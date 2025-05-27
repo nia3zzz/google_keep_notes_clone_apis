@@ -88,3 +88,7 @@ class UpdateNoteValidator(BaseModel):
                 raise ValueError("Image too large, max 25MB.")
 
         return files
+
+
+class DeleteNoteValidator(BaseModel):
+    note_id: UUID
