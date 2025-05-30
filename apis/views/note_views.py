@@ -10,6 +10,8 @@ from auth_sessions.utils import verifyToken
 from users.models import User
 import cloudinary.uploader
 from notes.models import Notes
+from django.db.models import Q
+from ..serializers.note_serializers import NotesSerializer
 
 
 # create a note view function that will recieve data from the client process them and save those data in the database including optional images, audio files and video files.
@@ -201,3 +203,37 @@ def update_note(request, note_id):
             return APIResponse(True, 200, "Note has been deleted.")
         except Exception:
             return APIResponse(False, 500, "Internal server error.")
+
+
+# this api controller function will send back notes of users and collaborator where the user has created or marked as a collaborator
+@api_view(["GET"])
+def get_notes(request):
+    # pass the request object to the verify token function which will verify the cookie and return the decoded id incase of successful verification
+    decodeToken = verifyToken(request)
+
+    # incase the verification was unsuccesful will return False
+    if decodeToken == False:
+        return APIResponse(False, 401, "Unauthorized")
+
+    try:
+        # geting hold of the user
+        found_user = User.objects.get(id=decodeToken)
+    except User.DoesNotExist:
+        return APIResponse(False, 401, "Unauthorized")
+
+    # get all the notes where the user is the creator
+    try:
+        # get all the notes where the user is the creator
+        found_notes = Notes.objects.filter(
+            Q(user_id=found_user.id) | Q(collaborators=found_user.id)
+        ).distinct()
+
+        # serialize the notes
+        serialized_found_notes = NotesSerializer(found_notes, many=True)
+
+        return APIResponse(
+            True, 200, "Notes have been fetched.", data=serialized_found_notes.data
+        )
+
+    except Exception:
+        return APIResponse(False, 500, "Internal server error.")
