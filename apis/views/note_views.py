@@ -5,6 +5,7 @@ from ..validators.note_validators import (
     CreateNoteValidator,
     UpdateNoteValidator,
     DeleteNoteValidator,
+    AddRemoveCollaboratorValidator,
 )
 from auth_sessions.utils import verifyToken
 from users.models import User
@@ -237,3 +238,61 @@ def get_notes(request):
 
     except Exception:
         return APIResponse(False, 500, "Internal server error.")
+
+
+@api_view(["POST", "DELETE"])
+def add_remove_collaborator(request, note_id):
+    # pass the request object to the verify token function which will verify the cookie and return the decoded id incase of successful verification
+    decodeToken = verifyToken(request)
+
+    # incase the verification was unsuccesful will return False
+    if decodeToken == False:
+        return APIResponse(False, 401, "Unauthorized")
+
+    try:
+        # geting hold of the user
+        found_user = User.objects.get(id=decodeToken)
+    except User.DoesNotExist:
+        return APIResponse(False, 401, "Unauthorized")
+
+    try:
+
+        # validate the request url parameter and the body for the id of the potential collaborator
+        validated_data = AddRemoveCollaboratorValidator(note_id=note_id, **request.data)
+    except ValidationError as e:
+        return APIResponse(False, 400, "Failed in type validation.", error=e.errors())
+
+    try:
+
+        # check if the provided note id's note exists in the database
+        found_note = Notes.objects.get(id=validated_data.note_id)
+    except Notes.DoesNotExist:
+        return APIResponse(False, 404, "No note found with this id.")
+
+    try:
+        # check if the provided user's id
+        found_collaborator = User.objects.get(id=validated_data.collaborator_id)
+    except User.DoesNotExist:
+        return APIResponse(False, 404, "No user found with this id.")
+
+    # check if the user himself is trying to make changes of himself as a collaborator
+    if found_user == found_collaborator:
+        return APIResponse(False, 409, "Can not make changes of yourself.")
+
+    # if the request made to this url is a post we will add a collaborator of this id
+    if request.method == "POST":
+        # check if the user is already a collaborator
+        if found_note.collaborators.filter(id=found_collaborator.id).exists():
+            return APIResponse(False, 409, "This user is already a collaborator.")
+
+        # save the user as a collaborator
+        found_note.collaborators.add(found_collaborator)
+        return APIResponse(True, 200, "This user has been added as a collaborator.")
+    elif request.method == "DELETE":
+        # check if the user is not in the collaborators
+        if found_note.collaborators.filter(id=found_collaborator.id).exists() == False:
+            return APIResponse(False, 409, "This user is not a collaborator.")
+
+        # save the user as a collaborator
+        found_note.collaborators.remove(found_collaborator)
+        return APIResponse(True, 200, "This user has been removed from a collaborator.")

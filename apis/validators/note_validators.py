@@ -92,3 +92,8 @@ class UpdateNoteValidator(BaseModel):
 
 class DeleteNoteValidator(BaseModel):
     note_id: UUID
+
+
+class AddRemoveCollaboratorValidator(BaseModel):
+    note_id: UUID
+    collaborator_id: UUID
