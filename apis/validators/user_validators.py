@@ -5,7 +5,7 @@ from typing import Any
 # creating a validator class model using the basemodel and providing the neccessary properties required for the validation, documentation link: https://docs.pydantic.dev/latest/#pydantic-examples
 class CreateUserValidator(BaseModel):
     name: str = Field(min_length=3, max_length=50)
-    email: EmailStr = Field()
+    email: EmailStr
     profile_picture: Any
     password: str = Field(min_length=6)
 
@@ -24,5 +24,10 @@ class CreateUserValidator(BaseModel):
 
 # login class validator for the validation of the req bodies of email and a password for least 6 characters
 class LoginValidator(BaseModel):
-    email: EmailStr = Field()
+    email: EmailStr
     password: str = Field(min_length=6)
+
+
+# get user validator is a sole email validator for looking up users with provided emails
+class GetUserValidator(BaseModel):
+    email: EmailStr
